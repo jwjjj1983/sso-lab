@@ -122,9 +122,9 @@ async def authorize(
     #    unverified redirect_uri is itself an open redirect.
     client = registered_clients(settings).get(client_id)
     if client is None:
-        return _error_page("Unknown client", f"No app is registered as {client_id!r}.")
+        return error_page("Unknown client", f"No app is registered as {client_id!r}.")
     if redirect_uri not in client.redirect_uris:
-        return _error_page(
+        return error_page(
             "Unregistered redirect URI",
             f"{redirect_uri!r} is not registered for {client.name}. The IdP only ever sends "
             "authorization codes to exactly-matching registered URIs.",
@@ -150,10 +150,13 @@ async def authorize(
         "nonce": nonce,
         "code_challenge": code_challenge,
         "lab_session": lab.id if lab else "",
+        "protocol": "oidc",
+        "app_name": client.name,
+        "consent": [_SCOPE_TEXT[s] for s in requested if s in _SCOPE_TEXT],
     }
 
     # 3. Single sign-on: if this browser already has a session with the IdP, skip the login page.
-    session = await _current_session(request)
+    session = await current_session(request)
     if session is not None and prompt != "login":
         if lab is not None:
             tag(
@@ -171,7 +174,7 @@ async def authorize(
     #    from another site (login CSRF against the IdP itself).
     tx = secrets.token_urlsafe(24)
     await _store(request).put_record("idpTx", tx, request_data, TX_TTL)
-    response = _login_page(client, tx, requested)
+    response = login_page(request_data, tx)
     response.set_cookie(
         TX_COOKIE, tx, max_age=int(TX_TTL.total_seconds()), httponly=True,
         secure=settings.https, samesite="lax", path="/login",
@@ -190,18 +193,17 @@ async def login(
     store = _store(request)
     request_data = await store.get_record("idpTx", tx) if tx else None
     if request_data is None or not hmac.compare_digest(request.cookies.get(TX_COOKIE, ""), tx):
-        return _error_page("Sign-in expired", "Start again from the app.")
+        return error_page("Sign-in expired", "Start again from the app.")
     lab_id = request_data.get("lab_session") or ""
-    client = registered_clients(settings)[request_data["client_id"]]
+    # The same login page serves OIDC and SAML sign-ins: one IdP, one session, both protocols.
+    protocol = request_data.get("protocol", "oidc")
 
     user = DEMO_USERS.get(username.strip().lower())
     # Demo passwords are compared in constant time; a real IdP stores only slow salted hashes.
     if user is None or not hmac.compare_digest(user.password, password):
         if lab_id:
-            tag(request, lab_id, "oidc.authenticate", note="Wrong username or password.")
-        return _login_page(
-            client, tx, request_data["scope"].split(), error="Wrong username or password."
-        )
+            tag(request, lab_id, f"{protocol}.authenticate", note="Wrong username or password.")
+        return login_page(request_data, tx, error="Wrong username or password.")
 
     await store.delete_record("idpTx", tx)
     sid = secrets.token_urlsafe(32)
@@ -209,9 +211,16 @@ async def login(
     await store.put_record(
         "idpSession", sid, {"sub": user.sub, "auth_time": auth_time}, SESSION_TTL
     )
-    if lab_id:
-        tag(request, lab_id, "oidc.authenticate", response_step="oidc.issue-code")
-    response = await _issue_code(request, request_data, user.sub, auth_time)
+    if protocol == "saml":
+        from sso_lab.idp.saml import issue_response  # local import: avoids a cycle
+
+        if lab_id:
+            tag(request, lab_id, "saml.authenticate", response_step="saml.post-form")
+        response = await issue_response(request, request_data, user.sub, auth_time)
+    else:
+        if lab_id:
+            tag(request, lab_id, "oidc.authenticate", response_step="oidc.issue-code")
+        response = await _issue_code(request, request_data, user.sub, auth_time)
     response.set_cookie(
         SESSION_COOKIE, sid, max_age=int(SESSION_TTL.total_seconds()), httponly=True,
         secure=settings.https, samesite="lax", path="/",
@@ -424,7 +433,7 @@ async def logout(
 # --- Helpers ------------------------------------------------------------------------------
 
 
-async def _current_session(request: Request) -> dict[str, Any] | None:
+async def current_session(request: Request) -> dict[str, Any] | None:
     sid = request.cookies.get(SESSION_COOKIE)
     return await _store(request).get_record("idpSession", sid) if sid else None
 
@@ -435,7 +444,7 @@ def _redirect_with(url: str, **params: str) -> RedirectResponse:
     return RedirectResponse(f"{url}{separator}{query}", status_code=302)
 
 
-def _error_page(title: str, message: str) -> Response:
+def error_page(title: str, message: str) -> Response:
     return page(
         badge="Identity Provider",
         title=title,
@@ -451,11 +460,13 @@ _SCOPE_TEXT = {
 }
 
 
-def _login_page(client: Client, tx: str, scopes: list[str], error: str | None = None) -> Response:
-    consent = "".join(f"<li>{html.escape(_SCOPE_TEXT[s])}</li>" for s in scopes if s in _SCOPE_TEXT)
+def login_page(request_data: dict[str, Any], tx: str, error: str | None = None) -> Response:
+    """The IdP's sign-in page, for a pending OIDC or SAML sign-in (``request_data``)."""
+    consent = "".join(f"<li>{html.escape(line)}</li>" for line in request_data["consent"])
+    app_name = html.escape(request_data["app_name"])
     error_html = f'<p class="error" role="alert">{html.escape(error)}</p>' if error else ""
     body = f"""
-<p>Sign in to continue to <strong>{html.escape(client.name)}</strong>. It will be able to:</p>
+<p>Sign in to continue to <strong>{app_name}</strong>. It will be able to:</p>
 <ul class="scopes">{consent}</ul>
 {error_html}
 <form method="post" action="/login">

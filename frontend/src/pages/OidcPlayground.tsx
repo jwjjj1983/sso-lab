@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { JwtView } from '../components/JwtView'
+import { Button, Code, Stage, Values } from '../components/PlaygroundParts'
 import { SequenceDiagram } from '../components/SequenceDiagram'
 import { Checks, TraceTimeline, type StepRef } from '../components/TraceTimeline'
 import type { ProtocolSpec } from '../content/types'
 import { api, ensureSession, type ExchangeResult } from '../lib/api'
+import { stageStatus as stage, useAction } from '../lib/playground'
 import { runInPopup } from '../lib/popup'
 import { useTraceStream } from '../lib/useTraceStream'
 
 type Mode = 'guided' | 'auto'
-type StageStatus = 'done' | 'current' | 'todo'
 
 export function OidcPlayground({ protocol, base }: { protocol: ProtocolSpec; base: string }) {
   const queryClient = useQueryClient()
@@ -111,7 +112,6 @@ export function OidcPlayground({ protocol, base }: { protocol: ProtocolSpec; bas
   const busy = [discover, signIn, exchange, userinfo, refreshTokens, openAppB, signOutAppA, signOutEverywhere].some(
     (m) => m.isPending,
   )
-  const stage = (done: boolean, available: boolean): StageStatus => (done ? 'done' : available ? 'current' : 'todo')
 
   return (
     <div className="space-y-6">
@@ -321,87 +321,5 @@ export function OidcPlayground({ protocol, base }: { protocol: ProtocolSpec; bas
         />
       </section>
     </div>
-  )
-}
-
-/** A playground action: clears the error first, shows failures, and refreshes App A's state. */
-function useAction<T>(
-  common: { setError: (message: string | null) => void; onSettled: () => void },
-  fn: () => Promise<T>,
-  onOk?: (value: T) => void,
-) {
-  return useMutation({
-    mutationFn: fn,
-    onMutate: () => common.setError(null),
-    onSuccess: (value) => onOk?.(value),
-    onError: (err) => common.setError(err.message),
-    onSettled: common.onSettled,
-  })
-}
-
-function Stage({ n, title, status, children }: { n: number; title: string; status: StageStatus; children: ReactNode }) {
-  return (
-    <section
-      aria-labelledby={`stage-${n}`}
-      className={`space-y-3 rounded-lg border bg-surface p-4 ${status === 'current' ? 'border-accent' : 'border-border'} ${
-        status === 'todo' ? 'opacity-70' : ''
-      }`}
-    >
-      <h3 id={`stage-${n}`} className="flex items-center gap-2 font-semibold">
-        <span
-          className={`flex size-6 items-center justify-center rounded-full text-xs ${
-            status === 'done' ? 'bg-ok text-surface' : status === 'current' ? 'bg-accent text-accent-fg' : 'bg-surface-2 text-muted'
-          }`}
-          aria-hidden
-        >
-          {status === 'done' ? '✓' : n}
-        </span>
-        {title}
-        {status === 'done' && <span className="sr-only">(done)</span>}
-      </h3>
-      <div className="space-y-3 text-sm">{children}</div>
-    </section>
-  )
-}
-
-function Button({
-  children,
-  onClick,
-  disabled,
-  secondary,
-}: {
-  children: ReactNode
-  onClick: () => void
-  disabled?: boolean
-  secondary?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-md px-3 py-2 text-sm font-medium disabled:opacity-40 ${
-        secondary ? 'border border-border' : 'bg-accent text-accent-fg'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function Code({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.9em]">{children}</code>
-}
-
-function Values({ values }: { values: Record<string, string> }) {
-  return (
-    <dl className="space-y-1 text-xs">
-      {Object.entries(values).map(([name, value]) => (
-        <div key={name} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2">
-          <dt className="font-mono text-muted">{name}</dt>
-          <dd className="font-mono break-all">{value}</dd>
-        </div>
-      ))}
-    </dl>
   )
 }

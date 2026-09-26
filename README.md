@@ -52,8 +52,8 @@ The Firestore store tests run against the emulator: `docker compose up -d firest
 backend/            FastAPI (Python 3.12, uv)
   src/sso_lab/
     lab/            lab sessions, trace model, recorder, stores, lab API
-    idp/            teaching IdP (discovery, JWKS, /authorize, login, /token, /userinfo, logout)
-    rp/             relying parties (App A / App B): the OIDC client
+    idp/            teaching IdP: OIDC (discovery, JWKS, /authorize, /token, /userinfo, logout) and SAML (metadata, SSO)
+    rp/             relying parties (App A / App B): OIDC client and SAML service provider
     demo.py         demo users and client registrations (throwaway, checked in on purpose)
 frontend/           React + TypeScript + Vite + Tailwind
   src/content/      protocol content: flow specs, threats, reading lists (drives the pages)
@@ -66,9 +66,9 @@ docs/               design notes and threat model
 - [x] **M0 Foundation**: three-site topology, trace recorder + live stream, CI/CD, infra
 - [x] **M1 Learn**: "What is SSO?" home page, protocol pages (overview, components, sequence diagram, security, reading list) for OIDC and SAML
 - [x] **M2 OIDC playground**: teaching IdP, authorization code + PKCE step by step, ID token validation explained check by check, UserInfo, refresh, single sign-on into App B, logout
-- [ ] **M3 Attack Lab**: toggle off `state`/PKCE/`nonce`/`aud`/signature checks in App A and watch the attacks work
-- [ ] **M4 SAML playground**
-- [ ] **M5** Client credentials, device code, logout
+- [x] **M3 SAML playground**: SP-initiated SSO (Redirect + POST bindings), metadata, signed assertions validated check by check (signature, wrapping, audience, InResponseTo, replay…), SSO shared with OIDC
+
+Future ideas (see [docs/design.md](docs/design.md#future-work)): the Attack Lab, client credentials and device code flows, SAML Single Logout.
 
 ## Security
 

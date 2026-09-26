@@ -53,8 +53,13 @@ def page(
     body_html: str,
     script: str | None = None,
     status_code: int = 200,
+    form_action: str | None = None,
 ) -> HTMLResponse:
-    """Render a page. ``body_html`` must already be escaped; ``script`` runs under a CSP nonce."""
+    """Render a page. ``body_html`` must already be escaped; ``script`` runs under a CSP nonce.
+
+    ``form_action`` is the one other origin a form on this page may post to (the SAML POST
+    binding posts to the app's ACS URL).
+    """
     nonce = secrets.token_urlsafe(16)
     script_tag = f'<script nonce="{nonce}">{script}</script>' if script else ""
     content = f"""<!doctype html>
@@ -64,10 +69,10 @@ def page(
 <body><main><div class="badge">{html.escape(badge)}</div><h1>{html.escape(title)}</h1>
 {body_html}</main>{script_tag}</body></html>"""
     response = HTMLResponse(content, status_code=status_code)
-    if script:
+    if script or form_action:
         response.headers["Content-Security-Policy"] = (
             f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; "
-            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+            f"base-uri 'none'; form-action 'self' {form_action or ''}; frame-ancestors 'none'"
         )
     return response
 
