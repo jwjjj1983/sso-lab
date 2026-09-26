@@ -1,7 +1,7 @@
 // Mirrors backend/src/sso_lab/lab/models.py.
 
 export type Actor = 'browser' | 'idp' | 'app-a' | 'app-b' | 'external'
-export type Channel = 'front' | 'back'
+export type Channel = 'front' | 'back' | 'local'
 
 export interface Header {
   name: string
@@ -21,6 +21,12 @@ export interface HttpResponseRecord {
   body: string | null
 }
 
+export interface Check {
+  label: string
+  ok: boolean
+  detail: string | null
+}
+
 export interface TraceEvent {
   id: string
   lab_session_id: string
@@ -29,10 +35,15 @@ export interface TraceEvent {
   source: Actor
   target: Actor
   step: string | null
-  request: HttpRequestRecord
+  /** Set when the response belongs to a different protocol step than the request. */
+  response_step: string | null
+  /** Absent for local events (work inside one party). */
+  request: HttpRequestRecord | null
   response: HttpResponseRecord | null
   duration_ms: number | null
   note: string | null
+  checks: Check[]
+  data: Record<string, string>
 }
 
 export const ACTOR_LABELS: Record<Actor, string> = {

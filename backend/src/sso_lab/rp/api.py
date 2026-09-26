@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
 
 from sso_lab.config import Actor, Settings
-from sso_lab.lab.recorder import Recorder
+from sso_lab.lab.recorder import Recorder, tag
 from sso_lab.lab.session import session_from_cookie
 from sso_lab.pages import page, post_message_script
 
@@ -39,9 +39,8 @@ async def diag_start(request: Request) -> Response:
             "lab_session": session.id,
         }
     )
-    response = RedirectResponse(f"{settings.urls[Actor.IDP]}/diag/echo?{query}", status_code=302)
-    await recorder.inbound(request, response, lab_session_id=session.id, step="diag.front-channel")
-    return response
+    tag(request, session.id, "diag.front-channel")
+    return RedirectResponse(f"{settings.urls[Actor.IDP]}/diag/echo?{query}", status_code=302)
 
 
 @router.get("/diag/return")
@@ -53,7 +52,8 @@ async def diag_return(request: Request) -> Response:
     if session is None:
         return _no_session(recorder.actor)
 
-    response = page(
+    tag(request, session.id, "diag.front-channel")
+    return page(
         badge=_BADGE[recorder.actor],
         title="Round trip complete",
         body_html="<p>Back at the app. This window will close.</p>",
@@ -61,5 +61,3 @@ async def diag_return(request: Request) -> Response:
             {"type": "sso-lab:diag", "ok": True}, settings.origins[Actor.APP_A]
         ),
     )
-    await recorder.inbound(request, response, lab_session_id=session.id, step="diag.front-channel")
-    return response

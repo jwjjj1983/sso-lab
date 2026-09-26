@@ -53,9 +53,13 @@ interface Props {
   /** Base path of the protocol, for links to threats on the security tab. */
   protocolPath: string
   threats: Threat[]
+  /** Steps already seen in the live trace (playground): drawn with a tick. */
+  completed?: ReadonlySet<string>
+  /** Show the step details panel next to the diagram (default true). */
+  showDetails?: boolean
 }
 
-export function SequenceDiagram({ flow, protocolPath, threats }: Props) {
+export function SequenceDiagram({ flow, protocolPath, threats, completed, showDetails = true }: Props) {
   const [params, setParams] = useSearchParams()
   const requested = flow.steps.findIndex((s) => s.id === params.get('step'))
   const activeIndex = requested >= 0 ? requested : 0
@@ -101,10 +105,10 @@ export function SequenceDiagram({ flow, protocolPath, threats }: Props) {
   const active = flow.steps[activeIndex]
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+    <div className={showDetails ? 'grid gap-6 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]' : ''}>
       <div className="min-w-0 space-y-3">
         <Legend />
-        <CompactStepList flow={flow} activeIndex={activeIndex} onSelect={select} />
+        <CompactStepList flow={flow} activeIndex={activeIndex} onSelect={select} completed={completed} />
         <div className="hidden overflow-x-auto rounded-lg border border-border bg-surface sm:block">
           <svg
             viewBox={`0 0 ${WIDTH} ${height}`}
@@ -177,6 +181,7 @@ export function SequenceDiagram({ flow, protocolPath, threats }: Props) {
                 y={TOP + index * ROW_HEIGHT}
                 laneX={laneX}
                 active={index === activeIndex}
+                done={completed?.has(step.id) ?? false}
                 markerPrefix={markerPrefix}
                 onSelect={() => select(index)}
               />
@@ -185,6 +190,7 @@ export function SequenceDiagram({ flow, protocolPath, threats }: Props) {
         </div>
       </div>
 
+      {showDetails && (
       <StepDetails
         key={active.id}
         flow={flow}
@@ -194,6 +200,7 @@ export function SequenceDiagram({ flow, protocolPath, threats }: Props) {
         threats={threats}
         onSelect={select}
       />
+      )}
     </div>
   )
 }
@@ -230,10 +237,12 @@ function CompactStepList({
   flow,
   activeIndex,
   onSelect,
+  completed,
 }: {
   flow: FlowSpec
   activeIndex: number
   onSelect: (index: number) => void
+  completed?: ReadonlySet<string>
 }) {
   const lane = (id: string) => flow.lanes.find((l) => l.id === id)?.label ?? id
   return (
@@ -259,7 +268,14 @@ function CompactStepList({
                 {index + 1}
               </span>
               <span className="min-w-0">
-                <span className="block text-sm font-medium">{step.label}</span>
+                <span className="block text-sm font-medium">
+                  {step.label}
+                  {completed?.has(step.id) && (
+                    <span className="ml-1 text-ok" aria-label="(seen in the trace)">
+                      ✓
+                    </span>
+                  )}
+                </span>
                 <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
                   <span>
                     {step.from === step.to ? `inside ${lane(step.from)}` : `${lane(step.from)} → ${lane(step.to)}`}
@@ -282,11 +298,12 @@ interface StepRowProps {
   y: number
   laneX: Map<string, number>
   active: boolean
+  done: boolean
   markerPrefix: string
   onSelect: () => void
 }
 
-function StepRow({ ref, step, index, y, laneX, active, markerPrefix, onSelect }: StepRowProps) {
+function StepRow({ ref, step, index, y, laneX, active, done, markerPrefix, onSelect }: StepRowProps) {
   const mid = y + ROW_HEIGHT / 2
   const from = laneX.get(step.from)!
   const to = laneX.get(step.to)!
@@ -300,7 +317,7 @@ function StepRow({ ref, step, index, y, laneX, active, markerPrefix, onSelect }:
       role="button"
       tabIndex={active ? 0 : -1}
       aria-current={active ? 'step' : undefined}
-      aria-label={`Step ${index + 1}: ${step.title}`}
+      aria-label={`Step ${index + 1}: ${step.title}${done ? ' (seen in the trace)' : ''}`}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -318,15 +335,20 @@ function StepRow({ ref, step, index, y, laneX, active, markerPrefix, onSelect }:
         rx={8}
         className={`seq-band ${active ? 'fill-accent/12' : 'fill-transparent hover:fill-surface-2'}`}
       />
-      <circle cx={28} cy={mid} r={11} className={active ? 'fill-accent' : 'fill-surface-2'} />
+      <circle
+        cx={28}
+        cy={mid}
+        r={11}
+        className={active ? 'fill-accent' : done ? 'fill-ok' : 'fill-surface-2'}
+      />
       <text
         x={28}
         y={mid}
         textAnchor="middle"
         dominantBaseline="central"
-        className={`text-[11px] font-semibold ${active ? 'fill-accent-fg' : 'fill-muted'}`}
+        className={`text-[11px] font-semibold ${active ? 'fill-accent-fg' : done ? 'fill-surface' : 'fill-muted'}`}
       >
-        {index + 1}
+        {done && !active ? '✓' : index + 1}
       </text>
 
       {isLocal ? (

@@ -1,4 +1,9 @@
-"""Trace data model: one ``TraceEvent`` per HTTP exchange between two lab actors."""
+"""Trace data model.
+
+A ``TraceEvent`` is either one HTTP exchange between two lab actors (front or back channel), or a
+``local`` event: work done inside one party that sends no message, such as generating the PKCE
+values or validating an ID token. Local events carry the values and check results to show.
+"""
 
 import hashlib
 import hmac
@@ -16,6 +21,8 @@ class Channel(StrEnum):
     FRONT = "front"
     # Server to server (e.g. the OAuth token request): invisible to the browser.
     BACK = "back"
+    # Inside one party: no message is sent.
+    LOCAL = "local"
 
 
 class Header(BaseModel):
@@ -36,6 +43,14 @@ class HttpResponseRecord(BaseModel):
     body: str | None = None
 
 
+class Check(BaseModel):
+    """One validation a party performed, e.g. "ID token `aud` contains app-a"."""
+
+    label: str
+    ok: bool
+    detail: str | None = None
+
+
 class TraceEvent(BaseModel):
     id: str = Field(default_factory=lambda: secrets.token_hex(8))
     lab_session_id: str
@@ -45,10 +60,16 @@ class TraceEvent(BaseModel):
     target: Actor
     # Protocol step this exchange belongs to, e.g. "oidc.token"; matches the flow specs.
     step: str | None = None
-    request: HttpRequestRecord
+    # Step the *response* belongs to, when it is a different one: e.g. GET /login (oidc.login)
+    # answered by a redirect to the IdP (oidc.authorize-redirect).
+    response_step: str | None = None
+    request: HttpRequestRecord | None = None
     response: HttpResponseRecord | None = None
     duration_ms: float | None = None
     note: str | None = None
+    # Local events: what was checked, and values worth showing (flat strings only).
+    checks: list[Check] = []
+    data: dict[str, str] = {}
 
 
 class LabSession(BaseModel):

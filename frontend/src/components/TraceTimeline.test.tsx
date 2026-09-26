@@ -20,6 +20,9 @@ const tokenCall: TraceEvent = {
   response: { status: 200, headers: [], body: '{"actor":"idp"}' },
   duration_ms: 3.2,
   note: null,
+  response_step: null,
+  checks: [],
+  data: {},
 }
 
 describe('TraceTimeline', () => {
@@ -40,5 +43,44 @@ describe('TraceTimeline', () => {
     expect(row).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('GET http://idp.localhost:8000/diag/ping')).toBeInTheDocument()
     expect(screen.getByText(/"actor":"idp"/)).toBeInTheDocument()
+  })
+
+  it('shows local work with its checks, and links hops to diagram steps', async () => {
+    const validate: TraceEvent = {
+      ...tokenCall,
+      id: 'e2',
+      channel: 'local',
+      target: 'app-a',
+      step: 'oidc.validate',
+      request: null,
+      response: null,
+      duration_ms: null,
+      note: 'App A rejected the ID token.',
+      checks: [
+        { label: 'iss is the expected IdP', ok: true, detail: null },
+        { label: 'aud contains app-a', ok: false, detail: "aud = 'app-b'" },
+      ],
+      data: { id_token_payload: '{"aud": "app-b"}' },
+    }
+    const onSelectStep = vi.fn()
+    render(
+      <TraceTimeline
+        events={[validate]}
+        stepRef={(id) => (id === 'oidc.validate' ? { id, number: 11, title: 'App A validates the ID token' } : undefined)}
+        onSelectStep={onSelectStep}
+      />,
+    )
+
+    const row = screen.getByRole('button', { name: /inside app a/i })
+    expect(row).toHaveTextContent('App A rejected the ID token.')
+    expect(row).toHaveTextContent('1/2 checks passed')
+
+    await userEvent.click(row)
+    expect(screen.getByText('Failed:')).toBeInTheDocument()
+    expect(screen.getByText("aud = 'app-b'")).toBeInTheDocument()
+    expect(screen.getByText('{"aud": "app-b"}')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Step 11: App A validates the ID token' }))
+    expect(onSelectStep).toHaveBeenCalledWith('oidc.validate')
   })
 })

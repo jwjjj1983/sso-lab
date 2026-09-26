@@ -7,7 +7,9 @@ dependencies = [
     "fastapi>=0.141.1",
     "google-cloud-firestore>=2.32.0",
     "httpx>=0.28.1",
+    "joserfc>=1.7.5",
     "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",
     "sse-starlette>=3.4.11",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -41,3 +43,5 @@ ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "ASYNC110"]
+# Throwaway demo credentials, checked in on purpose.
+"src/sso_lab/demo.py" = ["S105", "S106"]

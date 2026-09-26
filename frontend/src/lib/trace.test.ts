@@ -13,6 +13,9 @@ function event(id: string, ts: string): TraceEvent {
     response: null,
     duration_ms: null,
     note: null,
+    response_step: null,
+    checks: [],
+    data: {},
   }
 }
 

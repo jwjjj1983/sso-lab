@@ -1,12 +1,24 @@
 /**
  * Run a front-channel flow in a popup and wait for its last page to report back.
  *
- * The popup travels App A -> IdP -> App A. Only the final page, back on our own origin, may
- * post a message; messages from any other origin are ignored.
+ * The popup travels app -> IdP -> app. Only its final page posts a message, and only messages
+ * from the origins we expect (by default our own) are accepted. Anything else could be a
+ * page the popup was sent to pretending to be the app.
  */
-export function runInPopup<T extends { type: string }>(url: string, messageType: string): Promise<T> {
+export interface PopupMessage {
+  type: string
+  stage?: string
+  message?: string
+  app?: string
+}
+
+export function runInPopup<T extends PopupMessage = PopupMessage>(
+  url: string,
+  messageType: string,
+  allowedOrigins: string[] = [window.location.origin],
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const popup = window.open(url, 'sso-lab-flow', 'popup,width=520,height=680')
+    const popup = window.open(url, 'sso-lab-flow', 'popup,width=520,height=720')
     if (!popup) {
       reject(new Error('The popup was blocked. Allow popups for this site and try again.'))
       return
@@ -17,10 +29,12 @@ export function runInPopup<T extends { type: string }>(url: string, messageType:
       window.clearInterval(closedPoll)
     }
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.source !== popup) return
-      if (event.data?.type !== messageType) return
+      if (!allowedOrigins.includes(event.origin) || event.source !== popup) return
+      const data = event.data as T | undefined
+      if (data?.type !== messageType) return
       cleanup()
-      resolve(event.data as T)
+      if (data.stage === 'error') reject(new Error(data.message ?? 'The flow failed.'))
+      else resolve(data)
     }
     const closedPoll = window.setInterval(() => {
       if (popup.closed) {
