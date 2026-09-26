@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt build image
+.PHONY: install dev test lint fmt build image links
 
 install:
 	cd backend && uv sync
@@ -23,3 +23,6 @@ build:
 
 image:  ## Production image, all actors in one container on :8000
 	docker compose up --build lab
+
+links:  ## Check external links in the learning content
+	python3 scripts/check_links.py

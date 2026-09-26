@@ -1,0 +1,19 @@
+name: Links
+
+# The learning content links to external specs, articles and videos. Check weekly that they
+# still resolve, rather than on every PR (external sites are too flaky to block merges on).
+
+on:
+  schedule:
+    - cron: '0 14 * * 1' # Mondays 14:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 scripts/check_links.py

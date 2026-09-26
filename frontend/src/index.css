@@ -65,3 +65,9 @@
 body {
   @apply bg-bg text-fg font-sans antialiased;
 }
+
+/* Sequence diagram: keyboard focus ring on the focused step row. */
+.seq-step:focus-visible .seq-band {
+  stroke: var(--sl-accent);
+  stroke-width: 2;
+}
