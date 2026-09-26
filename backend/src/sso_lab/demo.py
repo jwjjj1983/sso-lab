@@ -60,3 +60,28 @@ def registered_clients(settings: Settings) -> dict[str, Client]:
             post_logout_redirect_uris=(base + LOGGED_OUT_PATH,),
         )
     return clients
+
+
+@dataclass(frozen=True)
+class ServiceProvider:
+    """An app registered with the IdP for SAML (normally imported from the app's metadata)."""
+
+    entity_id: str
+    name: str
+    acs_url: str
+
+
+SAML_ENTITY_PATH = "/rp/saml"
+SAML_ACS_PATH = "/rp/saml/acs"
+SAML_IDP_ENTITY_PATH = "/saml"
+
+
+def registered_service_providers(settings: Settings) -> dict[str, ServiceProvider]:
+    sps = {}
+    for actor, name in ((Actor.APP_A, "App A"), (Actor.APP_B, "App B")):
+        base = settings.urls[actor]
+        sp = ServiceProvider(
+            entity_id=base + SAML_ENTITY_PATH, name=name, acs_url=base + SAML_ACS_PATH
+        )
+        sps[sp.entity_id] = sp
+    return sps

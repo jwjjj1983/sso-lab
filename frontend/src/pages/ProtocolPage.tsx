@@ -6,6 +6,7 @@ import { SequenceDiagram } from '../components/SequenceDiagram'
 import { getProtocol } from '../content/protocols'
 import type { Component, ProtocolSpec } from '../content/types'
 import { OidcPlayground } from './OidcPlayground'
+import { SamlPlayground } from './SamlPlayground'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -75,11 +76,9 @@ function TabContent({ protocol, tab, base }: { protocol: ProtocolSpec; tab: TabI
         </section>
       )
     case 'playground':
-      return protocol.slug === 'oidc' ? (
-        <OidcPlayground protocol={protocol} base={base} />
-      ) : (
-        <Playground protocol={protocol} base={base} />
-      )
+      if (protocol.slug === 'oidc') return <OidcPlayground protocol={protocol} base={base} />
+      if (protocol.slug === 'saml') return <SamlPlayground protocol={protocol} base={base} />
+      return <Playground protocol={protocol} base={base} />
     case 'security':
       return <Security protocol={protocol} base={base} />
     case 'learn':

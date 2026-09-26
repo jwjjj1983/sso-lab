@@ -22,14 +22,17 @@ from sso_lab.config import Actor, Settings
 from sso_lab.hosting import HostDispatcher
 from sso_lab.idp.api import router as idp_router
 from sso_lab.idp.oidc import router as idp_oidc_router
+from sso_lab.idp.saml import router as idp_saml_router
 from sso_lab.lab.api import router as lab_router
 from sso_lab.lab.oidc_api import router as lab_oidc_router
 from sso_lab.lab.recorder import Recorder, RecordingMiddleware
+from sso_lab.lab.saml_api import router as lab_saml_router
 from sso_lab.lab.store import MemoryStore, Store
 from sso_lab.pages import page
 from sso_lab.rp.api import router as rp_router
 from sso_lab.rp.oidc import OidcClient
 from sso_lab.rp.oidc import router as rp_oidc_router
+from sso_lab.rp.saml import router as rp_saml_router
 from sso_lab.security import (
     CanonicalHostMiddleware,
     RateLimitMiddleware,
@@ -94,13 +97,16 @@ def build_actor_app(
     if actor is Actor.IDP:
         app.include_router(idp_router)
         app.include_router(idp_oidc_router)
+        app.include_router(idp_saml_router)
     else:
         app.include_router(rp_router)
         app.include_router(rp_oidc_router)
+        app.include_router(rp_saml_router)
 
     if actor is Actor.APP_A:
         app.include_router(lab_router)
         app.include_router(lab_oidc_router)
+        app.include_router(lab_saml_router)
         if settings.static_dir:
             _mount_spa(app, settings.static_dir)
     elif actor is Actor.APP_B:

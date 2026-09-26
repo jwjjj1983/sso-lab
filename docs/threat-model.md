@@ -31,7 +31,8 @@ that the deliberate weaknesses can only ever hurt the visitor's own throwaway de
 | Attack Lab leaking beyond the visitor | Vulnerable toggles only weaken App A's validation, only for that visitor's lab session. The IdP is never weakened | M3 |
 | SSRF through a "bring your own IdP" feature | Not offered. If ever added: allowlist only | Design |
 | Automated abuse (bots creating sessions) | Rate limits now; add Cloudflare Turnstile before session creation if abuse appears | Planned |
-| XML attacks on SAML (XXE, signature wrapping) | Hardened parser; XSW shown only as a simulated Attack Lab exercise | M4 |
+| XML attacks on SAML | Parser refuses DTDs and entities, no network (XXE); only RSA-SHA256/SHA-256 signatures accepted; verified against the certificate from the IdP's metadata, never one embedded in the message; the user is read only from the element the signature covers, and a document with more than one assertion is rejected (signature wrapping) | M3 |
+| SAML response misuse | IdP posts only to the SP's registered ACS URL; SP checks Issuer, Destination/Recipient, Audience, NotBefore/NotOnOrAfter; `InResponseTo` must match a pending request, which is consumed (no unsolicited or replayed responses); assertion IDs kept in a replay cache until they expire; `RelayState` only redirects to local paths | M3 |
 
 ## Known limitations
 

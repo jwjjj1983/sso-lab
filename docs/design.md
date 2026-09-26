@@ -60,3 +60,26 @@ back channel dashed teal) so the distinction does not rely on colour alone.
 
 External links are checked weekly by `scripts/check_links.py` (YouTube via oEmbed, since deleted videos still
 return 200).
+
+## SAML playground (M3)
+
+- Messages are built by hand with lxml (`idp/saml.py`, `rp/saml.py`) so they can be read; XML Signature uses
+  `signxml` (enveloped, exclusive C14N, RSA-SHA256). `signxml` returns the element the signature covers, and
+  the SP reads *only* from it: that is the signature-wrapping defense, and the playground shows it as a check.
+- The IdP's signing certificate is self-signed, created once and kept in the store; SPs learn it from the
+  IdP's metadata, never from the message.
+- The IdP login page and session are shared with OIDC: sign in through either protocol and both get SSO.
+- The response arrives as a cross-site form POST, which carries no `SameSite=Lax` cookies, so the SP finds
+  its AuthnRequest by `InResponseTo` in a server-side cache (single use). The playground explains this.
+- "Sign out everywhere" reuses the OIDC logout endpoint to end the IdP session; SAML Single Logout is not
+  implemented.
+
+## Future work
+
+- **Attack Lab**: per-lab-session toggles that switch off one of App A's checks (`state`, `nonce`, `aud`,
+  signature / `alg`, SAML audience or signature-wrapping) and a button that runs the matching attack. Only
+  App A is ever weakened, never the IdP. PKCE: the IdP will require PKCE only for clients registered as needing
+  it (App A stays strict), and the code-interception attack runs against a separate, deliberately weak demo
+  client (decided 2026-09-26).
+- More OAuth flows: client credentials, device code.
+- SAML Single Logout and IdP-initiated SSO (with its risks).

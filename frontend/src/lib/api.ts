@@ -36,6 +36,20 @@ export interface OidcState {
   } | null
 }
 
+/** What App A holds for this browser in the SAML flow (see backend lab/saml_api.py). */
+export interface SamlState {
+  request: { request_id: string; xml: string; encoded: string } | null
+  /** The IdP's response, posted to App A's ACS and waiting to be validated. */
+  response: string | null
+  session: {
+    sub: string
+    name: string
+    email: string
+    claims: Record<string, string>
+    assertion: string
+  } | null
+}
+
 export interface ExchangeResult {
   ok: boolean
   error: string | null
@@ -81,6 +95,13 @@ export const api = {
     exchange: () => request<ExchangeResult>('POST', '/api/lab/oidc/exchange'),
     userinfo: () => request<{ status: number; body: unknown }>('POST', '/api/lab/oidc/userinfo'),
     refresh: () => request<{ ok: boolean; error: string | null }>('POST', '/api/lab/oidc/refresh'),
+    logout: () => request<{ ok: boolean }>('POST', '/api/lab/oidc/logout'),
+  },
+  saml: {
+    metadata: () => request<{ idp: string; sp: string }>('POST', '/api/lab/saml/metadata'),
+    state: () => request<SamlState>('GET', '/api/lab/saml/state'),
+    validate: () => request<ExchangeResult>('POST', '/api/lab/saml/validate'),
+    // App A keeps one session cookie, whichever protocol signed you in.
     logout: () => request<{ ok: boolean }>('POST', '/api/lab/oidc/logout'),
   },
 }

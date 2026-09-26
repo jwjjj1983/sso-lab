@@ -12,7 +12,7 @@ export const saml: ProtocolSpec = {
     { label: 'Channels', value: 'Request and signed response both carried by the browser' },
     { label: 'Typical use', value: 'Enterprise workforce SSO into SaaS apps' },
   ],
-  playgroundStatus: 'Interactive playground arrives in a later milestone. The flow below is complete.',
+  playgroundStatus: 'Sign in for real and watch every request.',
 
   overview: {
     whatItIs: [
@@ -261,6 +261,9 @@ Location: https://idp.example/saml/sso
         title: 'The browser posts the response to the SP',
         summary:
           'This is a cross-site POST. Cookies marked `SameSite=Lax` are not sent with it, so the SP cannot rely on its usual session cookie here to look up the request ID. A classic SAML integration gotcha.',
+        details: [
+          'App A therefore keeps each AuthnRequest in a server-side cache and finds it by the response\'s `InResponseTo`, removing it as it does so: a response can only ever answer one request, once.',
+        ],
       },
       {
         id: 'saml.validate',
