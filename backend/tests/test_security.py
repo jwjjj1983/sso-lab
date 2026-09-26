@@ -30,7 +30,7 @@ async def test_hsts_when_served_over_https():
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="https://idp.example"
     ) as client:
-        resp = await client.get("/healthz")
+        resp = await client.get("/health")
     assert resp.headers["strict-transport-security"] == "max-age=31536000"
 
 
@@ -76,6 +76,6 @@ async def test_other_hostnames_redirect_to_the_canonical_url():
             "https://sso-lab-idp-123.us-central1.run.app/diag/echo?x=1"
         )
         # Health checks answer on any hostname.
-        assert (await client.get(f"{legacy}/healthz")).status_code == 200
-        canonical = await client.get("https://sso-lab-idp-123.us-central1.run.app/healthz")
+        assert (await client.get(f"{legacy}/health")).status_code == 200
+        canonical = await client.get("https://sso-lab-idp-123.us-central1.run.app/health")
         assert canonical.status_code == 200

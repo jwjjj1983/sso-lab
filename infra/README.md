@@ -14,6 +14,17 @@ Service URLs are deterministic (`https://sso-lab-<actor>-<project number>.us-cen
 service is told the others' URLs at deploy time. Requests that arrive on Cloud Run's other hostname are
 redirected to that canonical URL.
 
+## Credentials
+
+Terraform uses Application Default Credentials, which on a work laptop may be a different Google account.
+Run it with a token from the account that owns `sso-lab-demo` instead, which leaves ADC alone:
+
+```bash
+export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token --account jwjjj1983@gmail.com)
+```
+
+The token lasts an hour.
+
 ## First-time setup
 
 ```bash
