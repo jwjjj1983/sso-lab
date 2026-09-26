@@ -75,8 +75,9 @@ def build_actor_app(
     app.state.store = store
     app.state.recorder = Recorder(settings, store, actor)
 
-    @app.get("/healthz", include_in_schema=False)
-    async def healthz() -> dict[str, str]:
+    # Not /healthz: Cloud Run reserves paths ending in "z" and never forwards them.
+    @app.get("/health", include_in_schema=False)
+    async def health() -> dict[str, str]:
         return {"status": "ok", "actor": actor.value}
 
     @app.get("/diag/ping")

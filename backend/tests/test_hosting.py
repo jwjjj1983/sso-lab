@@ -3,12 +3,12 @@ import pytest
 
 @pytest.mark.parametrize("actor", ["idp", "app-a", "app-b"])
 async def test_host_header_selects_actor(lab, actor):
-    resp = await lab.get(actor, "/healthz")
+    resp = await lab.get(actor, "/health")
     assert resp.json() == {"status": "ok", "actor": actor}
 
 
 async def test_unknown_host_is_rejected(lab):
-    resp = await lab.http.get("/healthz", headers={"Host": "evil.example"})
+    resp = await lab.http.get("/health", headers={"Host": "evil.example"})
     assert resp.status_code == 404
 
 

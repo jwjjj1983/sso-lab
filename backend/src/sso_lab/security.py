@@ -27,7 +27,7 @@ class CanonicalHostMiddleware:
         self.settings = settings
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["path"] == "/healthz":
+        if scope["type"] != "http" or scope["path"] == "/health":
             await self.app(scope, receive, send)
             return
         host = Headers(scope=scope).get("host", "")
@@ -99,7 +99,7 @@ class RateLimitMiddleware:
         self._counts: dict[tuple[str, str], int] = defaultdict(int)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["path"] in ("/healthz",):
+        if scope["type"] != "http" or scope["path"] in ("/health",):
             await self.app(scope, receive, send)
             return
 
