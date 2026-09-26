@@ -1,0 +1,23 @@
+# Local development helpers.
+#
+#   docker compose up -d firestore   # Firestore emulator (only needed for the Firestore store tests
+#                                    # or SSO_LAB_STORE=firestore; the default dev store is in-memory)
+#   docker compose up --build lab    # the production image, all actors in one container
+services:
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8080
+    ports:
+      - "8080:8080"
+
+  lab:
+    build: .
+    environment:
+      SSO_LAB_ROLE: all
+      SSO_LAB_IDP_URL: http://idp.localhost:8000
+      SSO_LAB_APP_A_URL: http://app-a.localhost:8000
+      SSO_LAB_APP_B_URL: http://app-b.localhost:8000
+      SSO_LAB_BACKCHANNEL_LOOPBACK: 127.0.0.1:8000
+      PORT: "8000"
+    ports:
+      - "8000:8000"

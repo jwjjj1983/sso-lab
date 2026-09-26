@@ -1,0 +1,61 @@
+name: Deploy
+
+# Builds one image and rolls it out to the three Cloud Run services.
+# Skipped until the repo variables from `terraform output github_vars` are set.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.WIF_PROVIDER != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # exchange GitHub's OIDC token for short-lived GCP credentials
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/sso-lab/sso-lab:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Build and push image
+        run: |
+          gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy services
+        run: |
+          # IdP first: the apps call it on the back channel.
+          for actor in idp app-b app-a; do
+            gcloud run deploy "sso-lab-$actor" \
+              --image "$IMAGE" \
+              --region "${{ vars.GCP_REGION }}" \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --quiet
+          done
+
+      - name: Smoke test
+        run: |
+          for actor in idp app-a app-b; do
+            url=$(gcloud run services describe "sso-lab-$actor" \
+              --region "${{ vars.GCP_REGION }}" --project "${{ vars.GCP_PROJECT_ID }}" \
+              --format 'value(status.url)')
+            curl -sf "$url/healthz" | grep -q "\"actor\":\"$actor\""
+          done
