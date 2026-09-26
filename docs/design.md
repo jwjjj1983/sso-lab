@@ -23,9 +23,22 @@ see every hop, understand what each party checks, and see what goes wrong when a
 Each HTTP exchange is recorded exactly once, by the party that sees all of it: front-channel requests by the
 receiving actor (request + the redirect it answers with), back-channel requests by the calling actor.
 
-## Playground page (M1–M2)
+## Protocol pages
 
-Tabs: Overview · Components · Sequence · Playground · Security · Learn more.
-The playground has three panes: a sequence diagram with the current step highlighted, step controls, and an
-HTTP inspector (raw / decoded / explained). A per-protocol *flow spec* (actors, steps, explanations,
-references) drives the diagram, the stepper and the docs, so they cannot drift apart.
+`/protocols/<slug>/<tab>` with tabs Overview · Components · Sequence · Playground · Security · Learn more.
+
+All protocol content lives in typed modules under `frontend/src/content/` (one `ProtocolSpec` per
+protocol) rather than MDX. The content is mostly structured (lanes, steps, checks, threats, links), and
+typing it means a mistyped lane or threat id fails a test instead of rendering a broken diagram.
+
+The **flow spec** is the single source for the sequence diagram, the step details and the security tab's
+"checked at step N" links. Step ids (`oidc.token`, …) are also the `step` values the backend recorder puts on
+trace events, so the M2 playground can light up the diagram step a live request belongs to.
+`?step=<id>` deep-links to a step.
+
+The sequence diagram is a custom SVG rather than Mermaid, because it needs per-step selection, keyboard
+navigation (one tab stop, arrow keys, `aria-current="step"`) and channel styling (front channel solid orange,
+back channel dashed teal) so the distinction does not rely on colour alone.
+
+External links are checked weekly by `scripts/check_links.py` (YouTube via oEmbed, since deleted videos still
+return 200).

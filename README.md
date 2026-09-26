@@ -55,6 +55,7 @@ backend/            FastAPI (Python 3.12, uv)
     idp/            teaching IdP
     rp/             relying parties (App A / App B)
 frontend/           React + TypeScript + Vite + Tailwind
+  src/content/      protocol content: flow specs, threats, reading lists (drives the pages)
 infra/terraform/    Cloud Run, Firestore, Artifact Registry, GitHub OIDC deploy identity
 docs/               design notes and threat model
 ```
@@ -62,7 +63,7 @@ docs/               design notes and threat model
 ## Roadmap
 
 - [x] **M0 Foundation**: three-site topology, trace recorder + live stream, CI/CD, infra
-- [ ] **M1 Learn**: "What is SSO?" home page, flow-spec format, interactive sequence diagrams
+- [x] **M1 Learn**: "What is SSO?" home page, protocol pages (overview, components, sequence diagram, security, reading list) for OIDC and SAML
 - [ ] **M2 OIDC playground**: authorization code + PKCE, step by step, with token validation explained
 - [ ] **M3 Attack Lab + cross-app SSO**: toggle off `state`/PKCE/`nonce`/`aud` checks and watch the attacks work; App B
 - [ ] **M4 SAML playground**
