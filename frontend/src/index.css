@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+
+/* Design tokens. Light by default, dark via prefers-color-scheme. */
+:root {
+  --sl-bg: #f7f7f5;
+  --sl-surface: #ffffff;
+  --sl-surface-2: #f0f1f3;
+  --sl-fg: #1b1f24;
+  --sl-muted: #5b6470;
+  --sl-border: #dfe1e5;
+  --sl-accent: #3553d6;
+  --sl-accent-fg: #ffffff;
+  /* Channel colours: the most important distinction in the whole lab. */
+  --sl-front: #b35c00;
+  --sl-front-bg: #fff3e5;
+  --sl-back: #0f7b6c;
+  --sl-back-bg: #e3f6f2;
+  --sl-ok: #1a7f37;
+  --sl-warn: #9a6700;
+  --sl-err: #cf222e;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sl-bg: #15171a;
+    --sl-surface: #1e2125;
+    --sl-surface-2: #262a2f;
+    --sl-fg: #e8eaed;
+    --sl-muted: #9aa3ad;
+    --sl-border: #33373d;
+    --sl-accent: #8ea2ff;
+    --sl-accent-fg: #0f1320;
+    --sl-front: #ffb561;
+    --sl-front-bg: #3a2610;
+    --sl-back: #5fd4c0;
+    --sl-back-bg: #10302b;
+    --sl-ok: #57d17a;
+    --sl-warn: #e3b341;
+    --sl-err: #ff7b72;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--sl-bg);
+  --color-surface: var(--sl-surface);
+  --color-surface-2: var(--sl-surface-2);
+  --color-fg: var(--sl-fg);
+  --color-muted: var(--sl-muted);
+  --color-border: var(--sl-border);
+  --color-accent: var(--sl-accent);
+  --color-accent-fg: var(--sl-accent-fg);
+  --color-front: var(--sl-front);
+  --color-front-bg: var(--sl-front-bg);
+  --color-back: var(--sl-back);
+  --color-back-bg: var(--sl-back-bg);
+  --color-ok: var(--sl-ok);
+  --color-warn: var(--sl-warn);
+  --color-err: var(--sl-err);
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+body {
+  @apply bg-bg text-fg font-sans antialiased;
+}
