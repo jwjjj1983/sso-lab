@@ -7,12 +7,13 @@ Run locally (all actors in one process, routed by Host header)::
 On Cloud Run each service sets ``SSO_LAB_ROLE`` to idp, app-a or app-b.
 """
 
+import html
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp
@@ -20,11 +21,15 @@ from starlette.types import ASGIApp
 from sso_lab.config import Actor, Settings
 from sso_lab.hosting import HostDispatcher
 from sso_lab.idp.api import router as idp_router
+from sso_lab.idp.oidc import router as idp_oidc_router
 from sso_lab.lab.api import router as lab_router
-from sso_lab.lab.recorder import Recorder
+from sso_lab.lab.oidc_api import router as lab_oidc_router
+from sso_lab.lab.recorder import Recorder, RecordingMiddleware
 from sso_lab.lab.store import MemoryStore, Store
 from sso_lab.pages import page
 from sso_lab.rp.api import router as rp_router
+from sso_lab.rp.oidc import OidcClient
+from sso_lab.rp.oidc import router as rp_oidc_router
 from sso_lab.security import (
     CanonicalHostMiddleware,
     RateLimitMiddleware,
@@ -73,7 +78,8 @@ def build_actor_app(
     )
     app.state.settings = settings
     app.state.store = store
-    app.state.recorder = Recorder(settings, store, actor)
+    recorder = Recorder(settings, store, actor)
+    app.state.recorder = recorder
 
     # Not /healthz: Cloud Run reserves paths ending in "z" and never forwards them.
     @app.get("/health", include_in_schema=False)
@@ -87,26 +93,43 @@ def build_actor_app(
 
     if actor is Actor.IDP:
         app.include_router(idp_router)
+        app.include_router(idp_oidc_router)
     else:
         app.include_router(rp_router)
+        app.include_router(rp_oidc_router)
 
     if actor is Actor.APP_A:
         app.include_router(lab_router)
+        app.include_router(lab_oidc_router)
         if settings.static_dir:
             _mount_spa(app, settings.static_dir)
     elif actor is Actor.APP_B:
 
         @app.get("/")
-        async def app_b_home():  # type: ignore[no-untyped-def]
+        async def app_b_home(request: Request):  # type: ignore[no-untyped-def]
+            current = await OidcClient(request).current_session()
+            if current is None:
+                return page(
+                    badge="App B",
+                    title="App B",
+                    body_html="<p>A second app that trusts the same IdP. Sign in to App A first, "
+                    "then come here: the IdP remembers you, so no password is needed.</p>"
+                    '<p><a class="button" href="/rp/oidc/login">Sign in with the lab IdP</a></p>',
+                )
+            session = current[1]
             return page(
                 badge="App B",
-                title="App B",
-                body_html="<p>A second relying party. Sign in to App A first, then come here "
-                "to see single sign-on at work (coming in a later milestone).</p>",
+                title=f"Welcome, {session['name'] or session['sub']}",
+                body_html=f"<dl><dt>Signed in as</dt><dd>{html.escape(session['sub'])}</dd>"
+                f"<dt>Email</dt><dd>{html.escape(session['email'])}</dd></dl>"
+                '<p><a href="/rp/oidc/logout">Sign out of App B</a> · '
+                '<a href="/rp/oidc/logout?everywhere=true">Sign out everywhere</a></p>',
             )
 
     app.add_middleware(RateLimitMiddleware, settings=settings)
     app.add_middleware(SecurityHeadersMiddleware, settings=settings)
+    # Outside the security headers middleware, so traces show the headers actually sent.
+    app.add_middleware(RecordingMiddleware, recorder=recorder)
     if settings.role != "all":  # in dev, HostDispatcher already routes by host
         app.add_middleware(CanonicalHostMiddleware, settings=settings, actor=actor)
     return app

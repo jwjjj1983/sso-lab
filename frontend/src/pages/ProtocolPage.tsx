@@ -5,6 +5,7 @@ import { RichText } from '../components/RichText'
 import { SequenceDiagram } from '../components/SequenceDiagram'
 import { getProtocol } from '../content/protocols'
 import type { Component, ProtocolSpec } from '../content/types'
+import { OidcPlayground } from './OidcPlayground'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -74,7 +75,11 @@ function TabContent({ protocol, tab, base }: { protocol: ProtocolSpec; tab: TabI
         </section>
       )
     case 'playground':
-      return <Playground protocol={protocol} base={base} />
+      return protocol.slug === 'oidc' ? (
+        <OidcPlayground protocol={protocol} base={base} />
+      ) : (
+        <Playground protocol={protocol} base={base} />
+      )
     case 'security':
       return <Security protocol={protocol} base={base} />
     case 'learn':

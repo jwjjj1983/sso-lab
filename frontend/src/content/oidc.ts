@@ -12,7 +12,7 @@ export const oidc: ProtocolSpec = {
     { label: 'Channels', value: 'Code via the browser, tokens on the back channel' },
     { label: 'Typical use', value: 'Consumer sign-in, modern workforce SSO, mobile and SPA apps' },
   ],
-  playgroundStatus: 'Interactive playground arrives in milestone 2.',
+  playgroundStatus: 'Sign in for real and watch every request.',
 
   overview: {
     whatItIs: [

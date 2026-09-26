@@ -25,13 +25,19 @@ that the deliberate weaknesses can only ever hurt the visitor's own throwaway de
 | Leaking codes/tokens in logs, Referer or caches | `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on protocol responses, proxy headers (including client IP) dropped from traces | M0 |
 | Rate-limit bypass with spoofed `X-Forwarded-For` | Only the right-most entry (appended by Google's front end) is trusted | M0 |
 | Stolen deploy credentials | No service account keys: GitHub OIDC → Workload Identity Federation, limited to this repo's numeric id and `main`. Deployer has `run.developer` (can't change IAM). Actions pinned to commit SHAs | M0 |
-| Visitors entering real passwords | Site-wide banner; demo accounts only; passwords never stored in traces (M2) | M0 / M2 |
+| Visitors entering real passwords | Site-wide banner; demo accounts listed on the login page; `password` form fields are redacted before a trace is stored | M0 / M2 |
+| Codes, tokens and sessions in the teaching IdP | PKCE required for every client; exact `redirect_uri` matching (errors never redirect to an unverified URI); codes single-use (atomic take) and valid 60 s; refresh tokens rotate; `iss` in the authorization response (RFC 9207); IdP login form bound to a transaction cookie (no login CSRF against the IdP) | M2 |
+| Demo tokens visible in the playground | Deliberate, for learning, and labelled as such. They are issued for demo users only, expire within minutes (ID/access) or hours (refresh), and the playground says real apps keep tokens server-side | M2 |
 | Attack Lab leaking beyond the visitor | Vulnerable toggles only weaken App A's validation, only for that visitor's lab session. The IdP is never weakened | M3 |
 | SSRF through a "bring your own IdP" feature | Not offered. If ever added: allowlist only | Design |
 | Automated abuse (bots creating sessions) | Rate limits now; add Cloudflare Turnstile before session creation if abuse appears | Planned |
 | XML attacks on SAML (XXE, signature wrapping) | Hardened parser; XSW shown only as a simulated Attack Lab exercise | M4 |
 
 ## Known limitations
+
+- The IdP's RSA signing key is stored in Firestore (readable by the runtime service account) rather than in
+  KMS, and is not rotated. Fine for a demo whose tokens protect nothing; a real IdP would use an HSM/KMS and
+  rotate keys via the JWKS.
 
 - Rate limits are per instance (in memory), so the real ceiling is `limit × instances`. Acceptable for a demo
   with `max_instances = 3`; a load balancer with Cloud Armor would be needed for anything larger.

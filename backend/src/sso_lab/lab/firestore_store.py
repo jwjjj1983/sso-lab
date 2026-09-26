@@ -4,8 +4,9 @@ Layout::
 
     labSessions/{sessionId}                 LabSession + event_count + expires_at
     labSessions/{sessionId}/events/{eventId} TraceEvent + expires_at
+    records/{kind}:{key}                     { kind, data, expires_at }
 
-Both collections carry an ``expires_at`` timestamp with a Firestore TTL policy
+All collections carry an ``expires_at`` timestamp with a Firestore TTL policy
 (see infra/terraform), so visitor data is deleted automatically.
 
 Live updates use a snapshot listener, which is billed per changed document rather than
@@ -15,15 +16,17 @@ handed to the asyncio loop through a queue.
 
 import asyncio
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from typing import Any
 
 from google.cloud import firestore
 
 from sso_lab.lab.models import LabSession, TraceEvent
-from sso_lab.lab.store import Store
+from sso_lab.lab.store import Store, expiry, is_live
 
 SESSIONS = "labSessions"
 EVENTS = "events"
+RECORDS = "records"
 
 
 class FirestoreStore(Store):
@@ -89,6 +92,52 @@ class FirestoreStore(Store):
         finally:
             watch.unsubscribe()
 
+    def _record(self, kind: str, key: str) -> Any:
+        if "/" in kind or "/" in key:
+            raise ValueError("record kind and key must not contain '/'")
+        return self._db.collection(RECORDS).document(f"{kind}:{key}")
+
+    async def put_record(
+        self, kind: str, key: str, data: dict[str, Any], ttl: timedelta | None
+    ) -> None:
+        await self._record(kind, key).set({"kind": kind, "data": data, "expires_at": expiry(ttl)})
+
+    async def create_record(
+        self, kind: str, key: str, data: dict[str, Any], ttl: timedelta | None
+    ) -> bool:
+        ref = self._record(kind, key)
+        doc = {"kind": kind, "data": data, "expires_at": expiry(ttl)}
+
+        @firestore.async_transactional
+        async def create(transaction: Any) -> bool:
+            snap = await ref.get(transaction=transaction)
+            if snap.exists and is_live(snap.get("expires_at")):
+                return False
+            transaction.set(ref, doc)
+            return True
+
+        return await create(self._db.transaction())
+
+    async def get_record(self, kind: str, key: str) -> dict[str, Any] | None:
+        snap = await self._record(kind, key).get()
+        return _live_data(snap)
+
+    async def take_record(self, kind: str, key: str) -> dict[str, Any] | None:
+        ref = self._record(kind, key)
+
+        @firestore.async_transactional
+        async def take(transaction: Any) -> dict[str, Any] | None:
+            snap = await ref.get(transaction=transaction)
+            if not snap.exists:
+                return None
+            transaction.delete(ref)
+            return _live_data(snap)
+
+        return await take(self._db.transaction())
+
+    async def delete_record(self, kind: str, key: str) -> None:
+        await self._record(kind, key).delete()
+
     async def close(self) -> None:
         self._db.close()
         self._sync_db.close()
@@ -98,3 +147,10 @@ def _to_event(data: dict[str, Any] | None) -> TraceEvent:
     data = dict(data or {})
     data.pop("expires_at", None)
     return TraceEvent.model_validate(data)
+
+
+def _live_data(snap: Any) -> dict[str, Any] | None:
+    # TTL deletion can lag by up to a day, so expiry is always checked on read too.
+    if not snap.exists or not is_live(snap.get("expires_at")):
+        return None
+    return dict(snap.get("data") or {})

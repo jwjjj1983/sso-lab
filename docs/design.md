@@ -21,7 +21,25 @@ see every hop, understand what each party checks, and see what goes wrong when a
 ## Recording rule
 
 Each HTTP exchange is recorded exactly once, by the party that sees all of it: front-channel requests by the
-receiving actor (request + the redirect it answers with), back-channel requests by the calling actor.
+receiving actor (request + the redirect it answers with), back-channel requests by the calling actor. Work
+inside one party (generating PKCE values, validating an ID token) is a `local` event with its check results.
+
+Front-channel routes only *tag* a request (`tag(request, lab_session, step, response_step=…)`);
+`RecordingMiddleware` records it with the final response headers (CSP, `Set-Cookie`…) and holds the response
+until the event is stored, so the browser can never reach the next hop before this one is in the trace.
+Password form fields are redacted; demo client secrets and tokens are shown on purpose.
+
+## OIDC playground (M2)
+
+- The teaching IdP (`idp/oidc.py`) and the apps' OIDC client (`rp/oidc.py`) are written to be read: each
+  check is explicit, in order, with the reason next to it.
+- App A runs in **guided** mode for the playground: after the callback it stops, and the playground triggers
+  the token exchange, UserInfo and refresh through small lab endpoints (`/api/lab/oidc/*`). App B runs in
+  **auto** mode, like a normal app, which is what makes the single sign-on moment visible.
+- Short-lived protocol state (IdP sessions, codes, tokens, in-flight logins) lives in the store's expiring
+  records, so it works across Cloud Run instances. Codes are consumed atomically (Firestore transaction).
+- The IdP's lab-only `lab_session` parameter on `/authorize` is how it knows which visitor's trace to write to;
+  it grants append access only.
 
 ## Protocol pages
 

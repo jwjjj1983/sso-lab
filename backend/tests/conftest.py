@@ -1,6 +1,11 @@
 import asyncio
+import os
+import re
 import socket
+import uuid
+from collections import defaultdict
 from collections.abc import AsyncIterator
+from http.cookies import SimpleCookie
 
 import httpx
 import pytest
@@ -59,18 +64,91 @@ def make_settings(port: int, **overrides) -> Settings:
 async def lab() -> AsyncIterator[Lab]:
     port = _free_port()
     settings = make_settings(port)
-    store = MemoryStore()
-    config = uvicorn.Config(
-        create_app(settings, store), host="127.0.0.1", port=port, log_level="warning"
-    )
+    # SSO_LAB_TEST_STORE=firestore (with the emulator) runs the end-to-end tests on Firestore.
+    if os.environ.get("SSO_LAB_TEST_STORE") == "firestore":
+        from sso_lab.lab.firestore_store import FirestoreStore
+
+        store = FirestoreStore(project=f"test-{uuid.uuid4().hex[:8]}")
+    else:
+        store = MemoryStore()
+    app = create_app(settings, store)
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
     while not server.started:
         await asyncio.sleep(0.01)
     lab = Lab(port, settings, store)
+    lab.app = app
     try:
         yield lab
     finally:
         await lab.http.aclose()
         server.should_exit = True
         await task
+
+
+class Browser:
+    """A tiny browser: one cookie jar per host, and it follows redirects across hosts.
+
+    Every actor listens on the same loopback port, so a plain HTTP client would share one
+    cookie jar between App A, App B and the IdP. Real browsers keep cookies per site, and
+    single sign-on depends on it.
+    """
+
+    def __init__(self, lab: Lab) -> None:
+        self.lab = lab
+        self.jars: dict[str, dict[str, str]] = defaultdict(dict)
+        self.client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{lab.port}", timeout=10)
+
+    def url(self, actor: str, path: str) -> str:
+        return f"http://{actor}.localhost:{self.lab.port}{path}"
+
+    async def request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        parsed = httpx.URL(url)
+        jar = self.jars[parsed.host]
+        headers = {"Host": parsed.netloc.decode(), **kwargs.pop("headers", {})}
+        if jar:
+            headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in jar.items())
+        self.client.cookies.clear()
+        resp = await self.client.request(
+            method, parsed.raw_path.decode(), headers=headers, **kwargs
+        )
+        for header in resp.headers.get_list("set-cookie"):
+            cookie = SimpleCookie()
+            cookie.load(header)
+            for name, morsel in cookie.items():
+                if morsel["max-age"] == "0" or morsel.value in ("", '""'):
+                    jar.pop(name, None)
+                else:
+                    jar[name] = morsel.value
+        return resp
+
+    async def get(self, url: str, **kwargs) -> httpx.Response:
+        return await self.request("GET", url, **kwargs)
+
+    async def post(self, url: str, **kwargs) -> httpx.Response:
+        return await self.request("POST", url, **kwargs)
+
+    async def follow(self, resp: httpx.Response, limit: int = 10) -> httpx.Response:
+        """Follow redirects, the way the browser does in the login popup."""
+        for _ in range(limit):
+            if resp.status_code not in (301, 302, 303, 307, 308):
+                return resp
+            resp = await self.get(resp.headers["location"])
+        raise AssertionError("too many redirects")
+
+    async def aclose(self) -> None:
+        await self.client.aclose()
+
+
+def login_form_tx(html: str) -> str:
+    match = re.search(r'name="tx" value="([^"]+)"', html)
+    assert match, "no login form on the page"
+    return match.group(1)
+
+
+@pytest.fixture
+async def browser(lab) -> AsyncIterator[Browser]:
+    b = Browser(lab)
+    yield b
+    await b.aclose()

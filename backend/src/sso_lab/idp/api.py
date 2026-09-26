@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
 
 from sso_lab.config import Actor, Settings
-from sso_lab.lab.recorder import Recorder
+from sso_lab.lab.recorder import tag
 from sso_lab.lab.session import session_from_public_id
 from sso_lab.pages import page
 
@@ -47,8 +47,5 @@ async def diag_echo(
     response = RedirectResponse(f"{return_to}?{urlencode({'from': 'idp'})}", status_code=302)
     session = await session_from_public_id(request, lab_session)
     if session is not None:
-        recorder: Recorder = request.app.state.recorder
-        await recorder.inbound(
-            request, response, lab_session_id=session.id, step="diag.front-channel"
-        )
+        tag(request, session.id, "diag.front-channel")
     return response

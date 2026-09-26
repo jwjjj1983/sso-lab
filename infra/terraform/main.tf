@@ -66,6 +66,13 @@ resource "google_firestore_field" "sessions_ttl" {
   ttl_config {}
 }
 
+resource "google_firestore_field" "records_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "records" # IdP sessions, codes, tokens, app logins; the signing key has no expiry
+  field      = "expires_at"
+  ttl_config {}
+}
+
 resource "google_firestore_field" "events_ttl" {
   database   = google_firestore_database.default.name
   collection = "events" # collection group: labSessions/*/events

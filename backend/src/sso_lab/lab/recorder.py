@@ -1,27 +1,35 @@
-"""The flight recorder: turns HTTP exchanges into ``TraceEvent``s.
+"""The flight recorder: turns protocol activity into ``TraceEvent``s.
 
 Every exchange is recorded exactly once, by the party that can see all of it:
 
-* Front channel (browser -> actor): the receiving actor records the request and the response
-  it sends back (often a 302 that moves the browser to the next hop). See ``Recorder.inbound``.
-* Back channel (actor -> actor): the calling actor records it with a recording httpx client.
-  See ``Recorder.client``. The receiving actor does not record it again.
+* Front channel (browser -> actor): the receiving actor's route *tags* the request with the lab
+  session and protocol step (``tag``); ``RecordingMiddleware`` then records the request and
+  the final response, exactly as sent (including the headers other middleware adds).
+* Back channel (actor -> actor): the calling actor records it with a recording httpx client
+  (``Recorder.client``). The receiving actor does not record it again.
+* Local work (no message): ``Recorder.local``, e.g. "App A validated the ID token", with the
+  individual checks and values to show.
 
 Recording is best-effort: a failure to store a trace never breaks the protocol flow.
 """
 
 import logging
+import re
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 import httpx
+from starlette.datastructures import Headers
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from sso_lab.config import Actor, Settings
 from sso_lab.lab.models import (
     Channel,
+    Check,
     Header,
     HttpRequestRecord,
     HttpResponseRecord,
@@ -46,6 +54,32 @@ _DROP_HEADER_PREFIXES = (
     "priority",
 )
 
+# Form fields whose values never enter a trace. Demo client secrets and tokens are shown on
+# purpose; a password is not, because people sometimes type real ones despite the warnings.
+_REDACTED_FIELDS = re.compile(r"(^|&)(password)=[^&]*")
+
+_STATE_KEY = "sso_lab_trace"
+
+
+@dataclass
+class TraceTag:
+    lab_session_id: str
+    step: str | None
+    response_step: str | None = None
+    note: str | None = None
+
+
+def tag(
+    request: Request,
+    lab_session_id: str,
+    step: str | None,
+    *,
+    response_step: str | None = None,
+    note: str | None = None,
+) -> None:
+    """Mark this front-channel request for recording (by ``RecordingMiddleware``)."""
+    setattr(request.state, _STATE_KEY, TraceTag(lab_session_id, step, response_step, note))
+
 
 class Recorder:
     def __init__(self, settings: Settings, store: Store, actor: Actor) -> None:
@@ -60,101 +94,196 @@ class Recorder:
         except Exception:
             log.exception("failed to record trace event")
 
-    async def inbound(
+    async def local(
         self,
-        request: Request,
-        response: Response,
-        *,
         lab_session_id: str,
-        step: str | None = None,
-        note: str | None = None,
-        source: Actor = Actor.BROWSER,
+        step: str,
+        note: str,
+        *,
+        checks: list[Check] | None = None,
+        data: dict[str, str] | None = None,
     ) -> None:
-        """Record a front-channel request this actor received and the response it returns."""
+        """Record work done inside this actor, e.g. generating PKCE values or validating a token."""
         await self.record(
             TraceEvent(
                 lab_session_id=lab_session_id,
-                channel=Channel.FRONT,
-                source=source,
+                channel=Channel.LOCAL,
+                source=self.actor,
                 target=self.actor,
                 step=step,
                 note=note,
-                request=HttpRequestRecord(
-                    method=request.method,
-                    url=self._public_url(request),
-                    headers=self._headers(request.headers.items()),
-                    body=self._body(await request.body()),
-                ),
-                response=HttpResponseRecord(
-                    status=response.status_code,
-                    headers=self._headers(response.headers.items()),
-                    body=self._body(bytes(response.body)) if hasattr(response, "body") else None,
-                ),
+                checks=checks or [],
+                data=data or {},
             )
         )
 
-    def client(self, *, lab_session_id: str, step: str | None = None) -> httpx.AsyncClient:
-        """An httpx client whose every request is recorded as a back-channel event."""
-        transport = _RecordingTransport(self, lab_session_id=lab_session_id, step=step)
+    def client(
+        self,
+        *,
+        lab_session_id: str | None,
+        step: str | None = None,
+        response_step: str | None = None,
+    ) -> httpx.AsyncClient:
+        """An httpx client whose every request is recorded as a back-channel event.
+
+        With no lab session (an app used outside the playground), nothing is recorded.
+        """
+        transport = _RecordingTransport(
+            self, lab_session_id=lab_session_id, step=step, response_step=response_step
+        )
         return httpx.AsyncClient(transport=transport, timeout=10.0, follow_redirects=False)
 
     def actor_for_url(self, url: str) -> Actor:
         host = urlsplit(url).netloc
         return self.settings.actor_for_host(host) or Actor.EXTERNAL
 
-    def _public_url(self, request: Request) -> str:
+    def public_url(self, path: str, query: str) -> str:
         # Behind Cloud Run the app sees http://; show the URL the browser actually used.
-        base = self.settings.urls.get(self.actor)
-        path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        return f"{base}{path}" if base else str(request.url)
+        base = self.settings.urls.get(self.actor, "")
+        return f"{base}{path}" + (f"?{query}" if query else "")
 
-    def _headers(self, items: Iterable[tuple[str, str]]) -> list[Header]:
+    def headers(self, items: Iterable[tuple[str, str]]) -> list[Header]:
         return [
             Header(name=name, value=value)
             for name, value in items
             if not name.lower().startswith(_DROP_HEADER_PREFIXES)
         ]
 
-    def _body(self, raw: bytes) -> str | None:
+    def body(self, raw: bytes, content_type: str | None = None) -> str | None:
         if not raw:
             return None
         limit = self.settings.max_body_bytes
         text = raw[:limit].decode("utf-8", errors="replace")
+        if content_type and content_type.startswith("application/x-www-form-urlencoded"):
+            text = _REDACTED_FIELDS.sub(r"\1\2=[redacted]", text)
         return text + "\n…[truncated]" if len(raw) > limit else text
 
 
+class RecordingMiddleware:
+    """Records tagged front-channel exchanges, with the response exactly as it was sent.
+
+    A tagged response is held back until it has been recorded, then released. So by the time
+    the browser acts on it (say, follows the redirect to the next hop), this hop is already in
+    the trace, and the trace can never show hops out of order. Untagged responses, including
+    the trace's own event stream, pass straight through.
+    """
+
+    def __init__(self, app: ASGIApp, recorder: Recorder) -> None:
+        self.app = app
+        self.recorder = recorder
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started_at = datetime.now(UTC)
+        request_body: list[bytes] = []
+        held: list[Message] = []
+
+        async def receive_and_keep() -> Message:
+            message = await receive()
+            if message["type"] == "http.request":
+                request_body.append(message.get("body", b""))
+            return message
+
+        async def send_after_recording(message: Message) -> None:
+            trace: TraceTag | None = scope.get("state", {}).get(_STATE_KEY)
+            if trace is None:
+                await send(message)
+                return
+            held.append(message)
+            if message["type"] == "http.response.body" and not message.get("more_body", False):
+                await self._record(scope, trace, started_at, b"".join(request_body), held)
+                for m in held:
+                    await send(m)
+                held.clear()
+
+        await self.app(scope, receive_and_keep, send_after_recording)
+
+    async def _record(
+        self,
+        scope: Scope,
+        trace: TraceTag,
+        started_at: datetime,
+        request_body: bytes,
+        messages: list[Message],
+    ) -> None:
+        start = messages[0]
+        response_body = b"".join(m.get("body", b"") for m in messages[1:])
+        recorder = self.recorder
+        request_headers = Headers(scope=scope)
+        response_headers = Headers(raw=start.get("headers", []))
+        await recorder.record(
+            TraceEvent(
+                lab_session_id=trace.lab_session_id,
+                ts=started_at,
+                channel=Channel.FRONT,
+                source=Actor.BROWSER,
+                target=recorder.actor,
+                step=trace.step,
+                response_step=trace.response_step,
+                note=trace.note,
+                request=HttpRequestRecord(
+                    method=scope["method"],
+                    url=recorder.public_url(scope["path"], scope.get("query_string", b"").decode()),
+                    headers=recorder.headers(request_headers.items()),
+                    body=recorder.body(request_body, request_headers.get("content-type")),
+                ),
+                response=HttpResponseRecord(
+                    status=start["status"],
+                    headers=recorder.headers(response_headers.items()),
+                    body=recorder.body(response_body),
+                ),
+            )
+        )
+
+
 class _RecordingTransport(httpx.AsyncBaseTransport):
-    def __init__(self, recorder: Recorder, *, lab_session_id: str, step: str | None) -> None:
+    def __init__(
+        self,
+        recorder: Recorder,
+        *,
+        lab_session_id: str | None,
+        step: str | None,
+        response_step: str | None,
+    ) -> None:
         self._recorder = recorder
         self._lab_session_id = lab_session_id
         self._step = step
+        self._response_step = response_step
         self._inner = httpx.AsyncHTTPTransport()
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         body = await request.aread()
+        started_at = datetime.now(UTC)
         started = time.perf_counter()
         response = await self._inner.handle_async_request(self._route(request, body))
         await response.aread()
         elapsed_ms = (time.perf_counter() - started) * 1000
+        if self._lab_session_id is None:
+            return response
         recorder = self._recorder
         await recorder.record(
             TraceEvent(
                 lab_session_id=self._lab_session_id,
+                ts=started_at,
                 channel=Channel.BACK,
                 source=recorder.actor,
                 target=recorder.actor_for_url(str(request.url)),
                 step=self._step,
+                response_step=self._response_step,
                 duration_ms=round(elapsed_ms, 1),
                 request=HttpRequestRecord(
                     method=request.method,
                     url=str(request.url),
-                    headers=recorder._headers(request.headers.items()),
-                    body=recorder._body(body),
+                    headers=recorder.headers(request.headers.items()),
+                    body=recorder.body(body, request.headers.get("content-type")),
                 ),
                 response=HttpResponseRecord(
                     status=response.status_code,
-                    headers=recorder._headers(response.headers.items()),
-                    body=recorder._body(response.content),
+                    headers=recorder.headers(response.headers.items()),
+                    body=recorder.body(response.content),
                 ),
             )
         )
